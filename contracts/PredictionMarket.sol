@@ -118,30 +118,8 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
         returns(bool success)
     {
         LogOraclizeQuery("Oraclize query was sent, standing by for the answer..");
-        //oraclize_query("WolframAlpha", "random number between 1 and 100");
-        
-        //First, clean the waiting id. 
-        //If the question doesn´t pass the requires below,
-        //it would have cleaned the question id already for safety.
-        //it should not run if the question id doesn´t pass the requires above.
-
-        string memory result = "67"; //random number returned by Oraclizeit
-
-        uint questionId = questionIdWaitingForAnswer;
-        questionIdWaitingForAnswer = 0;
-        
-        require(QuestionsMapping[questionId].firstRoll > 0); //question exist
-        require(QuestionsMapping[questionId].resultRoll==0);  //question is not answered
-        require(QuestionsMapping[questionId].isWaitingForAnswer  == true);
-        
-        QuestionsMapping[questionId].isWaitingForAnswer = false;
-
-        uint _result = stringToUint(result);  //convert string to uint
-
-        QuestionsMapping[questionId].resultRoll= _result;
-        
-        LogQuestionIsAnswered(msg.sender, questionId, _result);
-
+        oraclize_query("WolframAlpha", "random number between 1 and 100");
+    
         return true;
     }
        
