@@ -5,7 +5,7 @@ import "./SafeMath.sol";
 import "./usingOraclize.sol";
 
 contract PredictionMarket is Admin, SafeMath, usingOraclize{
-
+ 
     uint    public initialFund;
     
     uint[]  public questionsIds;
@@ -15,6 +15,7 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
         uint firstRoll;  //first number that Oraclizeit sent
         uint resultRoll; //result to compare with the 
         bool isWaitingForAnswer; //if a query to oraclezit is sent, set this value to true and wait for the answer
+        bool isOpenForBets;
     }
     
     struct UserBet {
@@ -28,9 +29,11 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
     mapping (bytes32 => UserBet)     public BetsMapping;
 
     //Log question events
-    event LogQuestionAdded(address user, uint firstRoll, uint id);
+    event LogQuestionAdded(address user,  uint id, uint firstRoll, uint resultRoll, 
+                           bool isWaitingForAnswer, bool isOpenForBets);
     event LogQuestionIsAnswered(address user, uint id, uint answer);
     event LogQuestionIsWaitingForRandomNumber(address sender, uint questionId);
+    event LogQuestionIsClosedForNewBets(address sender, uint questionId, bool isOpenForBets);
     
     //log bets events
     event LogBetIsPlaced(address staker, bytes32 betId, uint questionId, bool answerBet, uint betAmount);
@@ -44,19 +47,20 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
     
     //Constructor
     //_multiplier = number of wei that will earn
-    function PredictionMarket(uint _winOdds , uint _multiplier, 
+    function PredictionMarket(address _admin, uint _winOdds , uint _multiplier, 
                               uint _minimunBet, uint _maximunBet)
     {
-        TrustedUserMapping[msg.sender] = true; //owner is trusted
-        LogSetTrustedUser(msg.sender, true);
+        TrustedUserMapping[_admin] = true; //owner is trusted
+        LogSetTrustedUser(_admin, true);
 
-        winOdds = _winOdds;
-        multiplier = _multiplier;
-        minimunBet = _minimunBet;
-        maximunBet = _maximunBet;
-        maximunBet = MAX_UINT256;  //to avoid problems during tests
+        admin           = _admin;
 
-        owner = msg.sender;
+        winOdds         = _winOdds;
+        multiplier      = _multiplier;
+        minimunBet      = _minimunBet;
+        maximunBet      = _maximunBet;
+        maximunBet      = MAX_UINT256;  //to avoid problems during tests
+        minimunBalance  = 0;  //it is defaul for now
     }
     
     //Add a question
@@ -74,14 +78,37 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
         QuestionsMapping[questionId] = QuestionStruct({
             firstRoll : initialRandomNumber,  //
             resultRoll : 0, //default value,
-            isWaitingForAnswer: false
+            isWaitingForAnswer: false,
+            isOpenForBets: true
         });
         
-        LogQuestionAdded(msg.sender, questionId, QuestionsMapping[questionId].firstRoll);
+        LogQuestionAdded(msg.sender, questionId, QuestionsMapping[questionId].firstRoll, 
+                     QuestionsMapping[questionId].resultRoll , QuestionsMapping[questionId].isWaitingForAnswer,
+                     QuestionsMapping[questionId].isOpenForBets);
         
         return true;
     }
     
+    //to avoid the answer be available in the blockchain while question is open for bets,
+    //we have to close it for bets first before requesting a random number
+    function closeQuestionForBets(uint questionId) 
+        onlyIfRunning
+        onlyIfTrustedUser
+        public
+        returns(bool success) 
+    {
+        require(QuestionsMapping[questionId].firstRoll > 0);  //question exists
+        require(QuestionsMapping[questionId].resultRoll==0);  //question is not answered
+        require(QuestionsMapping[questionId].isWaitingForAnswer  == false);
+        require(QuestionsMapping[questionId].isOpenForBets); 
+
+        QuestionsMapping[questionId].isOpenForBets = false;
+
+        LogQuestionIsClosedForNewBets(msg.sender, questionId, QuestionsMapping[questionId].isOpenForBets);
+
+        return true;
+    }
+
     //you can set question answer just once
     //it is payable because of the Oraclizeit
     function setQuestionAnswer(uint questionId) 
@@ -99,6 +126,7 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
         //we need to stop new betings and wait for the random number
         require(QuestionsMapping[questionId].firstRoll > 0); //question exist
         require(QuestionsMapping[questionId].resultRoll==0);  //question is not answered
+        require(!QuestionsMapping[questionId].isOpenForBets); //before get an answer, question must be closed for new bets and avoid attacks!                
         require(QuestionsMapping[questionId].isWaitingForAnswer  == false);
 
         QuestionsMapping[questionId].isWaitingForAnswer = true;
@@ -118,12 +146,11 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
         returns(bool success)
     {
         LogOraclizeQuery("Oraclize query was sent, standing by for the answer..");
-        oraclize_query("WolframAlpha", "random number between 1 and 100");
-    
+        oraclize_query("WolframAlpha", "random number between 1 and 100");      
+
         return true;
     }
-       
-    //it will not work for now during tests of the hub    
+          
     function __callback(bytes32 myid, string result)
     {
         require(msg.sender == oraclize_cbAddress());
@@ -139,13 +166,14 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
         
         require(QuestionsMapping[questionId].firstRoll > 0); //question exist
         require(QuestionsMapping[questionId].resultRoll==0);  //question is not answered
+        require(!QuestionsMapping[questionId].isOpenForBets); //wont't hurt another check        
         require(QuestionsMapping[questionId].isWaitingForAnswer  == true);
         
         QuestionsMapping[questionId].isWaitingForAnswer = false;
 
         uint _result = stringToUint(result);  //convert string to uint
 
-        QuestionsMapping[questionId].resultRoll= _result;
+        QuestionsMapping[questionId].resultRoll = _result;
         
         LogQuestionIsAnswered(msg.sender, questionId, _result);
     }
@@ -190,6 +218,11 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
         require(msg.value<=maximunBet);
         require(QuestionsMapping[questionId].firstRoll > 0);  //question exists
         require(QuestionsMapping[questionId].resultRoll == 0);
+        require(QuestionsMapping[questionId].isOpenForBets);  //if it is closed, question can receive
+                                                              // an ansnwer. This flag will avoid the answer 
+                                                              // be available in the blockchain and an attacker
+                                                              // could make a bet before then answer is mined
+        
         
         bytes32 betId = getBetId(msg.sender, questionId);
         
@@ -216,6 +249,7 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
     {
         require(QuestionsMapping[questionId].firstRoll>0);
         require(QuestionsMapping[questionId].resultRoll>0);
+        require(!QuestionsMapping[questionId].isOpenForBets); //wont't hurt another check
         
         bytes32 betId = getBetId(msg.sender, questionId);
         
@@ -225,8 +259,15 @@ contract PredictionMarket is Admin, SafeMath, usingOraclize{
         //question exist, it is already answered, user has a bet and is not paid yet
         //so, check if user bet in the correct answer
         //Is first number greater than the second roll number?
-        bool questionAnswer = QuestionsMapping[questionId].firstRoll > QuestionsMapping[questionId].resultRoll;
+        bool questionAnswer = QuestionsMapping[questionId].resultRoll > QuestionsMapping[questionId].firstRoll;
         
+        //is second number greater than the firs?
+        //
+        //if firs = 4 and second = 67, 67 > 4 - true
+        //if user said true, pay. if false , dont pay
+        //if first = 80 and second = 67, 67 > 80 - false
+        //if user said true, dont pay, if false , dont pay.
+
         if(BetsMapping[betId].userBetAnswer == questionAnswer ){
 
             //if it is the correct answer, reward the user
