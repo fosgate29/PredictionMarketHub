@@ -4,6 +4,7 @@ import "./Stoppable.sol";
 
 contract Admin is Stoppable{
     
+    address public admin;
     uint    public winOdds;
     uint    public multiplier;
     uint    public minimunBet;
@@ -22,9 +23,9 @@ contract Admin is Stoppable{
     event LogMinimunBetUpdated(address user, uint newMinimunBetValue);
     event LogMaximunBetUpdated(address user, uint newMaximunBetValue);
     
-    modifier onlyIfAdmin { require(msg.sender==owner); _; }
+    modifier onlyIfAdmin { require(msg.sender==admin); _; }
     modifier onlyIfTrustedUser{ require(TrustedUserMapping[msg.sender]==true); _; }
-    modifier onlyIfPredictionMarketHasBalance{ require(this.balance>minimunBalance); _; }
+    modifier onlyIfPredictionMarketHasBalance{ require(this.balance>=minimunBalance); _; }
 
     //checks if user is trusted.
     //truested user can set answer to question
@@ -43,13 +44,12 @@ contract Admin is Stoppable{
         constant 
         returns(bool _isAdmin)
     {
-        return user==owner;
+        return user==admin;
     }
     
     //only owner can set if a user is trusted or not
     function setUserIsTrusted(address trustedUser, bool isTrusted)
         onlyIfAdmin
-        onlyIfRunning
         public 
         returns(bool success)
     {
@@ -61,7 +61,6 @@ contract Admin is Stoppable{
     
     function setWinOdds(uint _winOdds)
         onlyIfAdmin
-        onlyIfRunning
         public
         returns(bool success)
     {
@@ -71,7 +70,6 @@ contract Admin is Stoppable{
     
     function setMultiplier(uint _multiplier)
         onlyIfAdmin
-        onlyIfRunning
         public
         returns(bool success)
     {
@@ -81,7 +79,6 @@ contract Admin is Stoppable{
     
     function setMinimunBet(uint _minimunBet)
         onlyIfAdmin
-        onlyIfRunning
         public
         returns(bool sucess)
     {
@@ -91,11 +88,19 @@ contract Admin is Stoppable{
     
     function setMaximumBet(uint _maximunBet)
         onlyIfAdmin
-        onlyIfRunning
         public
         returns(bool success)
     {
         maximunBet = _maximunBet;
+        return true;
+    }
+
+    function setMinimunBalance(uint _minimunBalance)
+        onlyIfAdmin
+        public
+        returns(bool success)
+    {
+        minimunBalance = _minimunBalance;
         return true;
     }
     
