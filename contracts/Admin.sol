@@ -59,6 +59,7 @@ contract Admin is Stoppable{
         return true;
     }
     
+    //set win odds
     function setWinOdds(uint _winOdds)
         onlyIfAdmin
         public
