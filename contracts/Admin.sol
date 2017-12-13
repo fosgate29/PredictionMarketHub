@@ -2,6 +2,7 @@ pragma solidity ^0.4.11;
 
 import "./Stoppable.sol";
 
+//contract with admin functions
 contract Admin is Stoppable{
     
     address public admin;
